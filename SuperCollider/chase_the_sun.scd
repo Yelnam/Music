@@ -1,3 +1,28 @@
+// Volume control setup
+(
+// Current volume tracker
+~currentAmp = 0.4;  // Starting volume from your pattern
+~volumeStep = 0.05; // Amount to change volume by
+
+// Up arrow with Ctrl (increase volume)
+KeyCodeActions.at(0xFF52, false, true, false, {
+    ~currentAmp = min(~currentAmp + ~volumeStep, 1.0);
+    ~pattern.set(\amp, ~currentAmp);
+    ("Volume up: " ++ ~currentAmp.round(0.01)).postln;
+});
+
+// Down arrow with Ctrl (decrease volume)
+KeyCodeActions.at(0xFF54, false, true, false, {
+    ~currentAmp = max(~currentAmp - ~volumeStep, 0.0);
+    ~pattern.set(\amp, ~currentAmp);
+    ("Volume down: " ++ ~currentAmp.round(0.01)).postln;
+});
+
+"Volume controls bound:
+ Ctrl+Up Arrow   : Increase volume
+ Ctrl+Down Arrow : Decrease volume".postln;
+)
+
 // First define our synth with adjustable parameters
 (
 SynthDef(\chaseSun, {
