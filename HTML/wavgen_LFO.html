@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Web Synth with LFO</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f0f0f0;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-width: 800px;
+        }
+        .section {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .section-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            margin: 10px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        .controls {
+            margin: 20px 0;
+            display: grid;
+            gap: 10px;
+        }
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        label {
+            min-width: 100px;
+        }
+        canvas {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        select {
+            padding: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <button id="toggleSound">Start Sound</button>
+        
+        <div class="section">
+            <div class="section-title">Main Oscillator</div>
+            <div class="controls">
+                <div class="control-group">
+                    <label for="waveform">Waveform:</label>
+                    <select id="waveform">
+                        <option value="sine">Sine</option>
+                        <option value="square">Square</option>
+                        <option value="sawtooth">Sawtooth</option>
+                        <option value="triangle">Triangle</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label for="frequency">Frequency:</label>
+                    <input type="range" id="frequency" min="20" max="2000" value="440" step="1">
+                    <span id="freqDisplay">440 Hz</span>
+                </div>
+                <div class="control-group">
+                    <label for="volume">Volume:</label>
+                    <input type="range" id="volume" min="0" max="100" value="50" step="1">
+                    <span id="volDisplay">50%</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">LFO</div>
+            <div class="controls">
+                <div class="control-group">
+                    <label for="lfoWaveform">LFO Shape:</label>
+                    <select id="lfoWaveform">
+                        <option value="sine">Sine</option>
+                        <option value="square">Square</option>
+                        <option value="sawtooth">Sawtooth</option>
+                        <option value="triangle">Triangle</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label for="lfoFreq">LFO Rate:</label>
+                    <input type="range" id="lfoFreq" min="0.1" max="20" value="1" step="0.1">
+                    <span id="lfoFreqDisplay">1.0 Hz</span>
+                </div>
+                <div class="control-group">
+                    <label for="lfoDepth">LFO Depth:</label>
+                    <input type="range" id="lfoDepth" min="0" max="100" value="50" step="1">
+                    <span id="lfoDepthDisplay">50%</span>
+                </div>
+                <div class="control-group">
+                    <label for="lfoTarget">Modulate:</label>
+                    <select id="lfoTarget">
+                        <option value="frequency">Frequency</option>
+                        <option value="amplitude">Amplitude</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <canvas id="oscilloscope" width="400" height="200"></canvas>
+    </div>
+
+    <script>
+        let audioContext = null;
+        let mainOsc = null;
+        let lfoOsc = null;
+        let gainNode = null;
+        let lfoGain = null;
+        let analyser = null;
+        let isPlaying = false;
+        let animationId = null;
+
+        const canvas = document.getElementById('oscilloscope');
+        const canvasCtx = canvas.getContext('2d');
+
+        function initAudio() {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 2048;
+        }
+
+        function drawOscilloscope() {
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            
+            function draw() {
+                animationId = requestAnimationFrame(draw);
+                analyser.getByteTimeDomainData(dataArray);
+
+                canvasCtx.fillStyle = 'rgb(240, 240, 240)';
+                canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+                canvasCtx.lineWidth = 2;
+                canvasCtx.strokeStyle = 'rgb(0, 123, 255)';
+                canvasCtx.beginPath();
+
+                const sliceWidth = canvas.width * 1.0 / bufferLength;
+                let x = 0;
+
+                for (let i = 0; i < bufferLength; i++) {
+                    const v = dataArray[i] / 128.0;
+                    const y = v * canvas.height/2;
+
+                    if (i === 0) {
+                        canvasCtx.moveTo(x, y);
+                    } else {
+                        canvasCtx.lineTo(x, y);
+                    }
+
+                    x += sliceWidth;
+                }
+
+                canvasCtx.lineTo(canvas.width, canvas.height/2);
+                canvasCtx.stroke();
+            }
+
+            draw();
+        }
+
+        document.getElementById('toggleSound').addEventListener('click', function() {
+            if (!audioContext) {
+                initAudio();
+            }
+
+            if (!isPlaying) {
+                // Create main oscillator
+                mainOsc = audioContext.createOscillator();
+                gainNode = audioContext.createGain();
+                
+                // Create LFO
+                lfoOsc = audioContext.createOscillator();
+                lfoGain = audioContext.createGain();
+                
+                // Set initial values
+                mainOsc.type = document.getElementById('waveform').value;
+                mainOsc.frequency.setValueAtTime(
+                    document.getElementById('frequency').value,
+                    audioContext.currentTime
+                );
+                
+                gainNode.gain.setValueAtTime(
+                    document.getElementById('volume').value / 100,
+                    audioContext.currentTime
+                );
+
+                // Set up LFO
+                lfoOsc.type = document.getElementById('lfoWaveform').value;
+                lfoOsc.frequency.setValueAtTime(
+                    document.getElementById('lfoFreq').value,
+                    audioContext.currentTime
+                );
+                
+                const lfoDepth = document.getElementById('lfoDepth').value / 100;
+                lfoGain.gain.setValueAtTime(lfoDepth, audioContext.currentTime);
+
+                // Connect based on LFO target
+                if (document.getElementById('lfoTarget').value === 'frequency') {
+                    const freq = parseFloat(document.getElementById('frequency').value);
+                    lfoGain.gain.setValueAtTime(freq * lfoDepth, audioContext.currentTime);
+                    lfoOsc.connect(lfoGain);
+                    lfoGain.connect(mainOsc.frequency);
+                } else {
+                    lfoGain.gain.setValueAtTime(lfoDepth, audioContext.currentTime);
+                    lfoOsc.connect(lfoGain);
+                    lfoGain.connect(gainNode.gain);
+                }
+
+                // Connect main audio path
+                mainOsc.connect(gainNode);
+                gainNode.connect(analyser);
+                analyser.connect(audioContext.destination);
+                
+                // Start oscillators
+                mainOsc.start();
+                lfoOsc.start();
+                drawOscilloscope();
+                
+                isPlaying = true;
+                this.textContent = 'Stop Sound';
+            } else {
+                // Stop everything
+                mainOsc.stop();
+                lfoOsc.stop();
+                mainOsc.disconnect();
+                lfoOsc.disconnect();
+                gainNode.disconnect();
+                lfoGain.disconnect();
+                cancelAnimationFrame(animationId);
+                
+                // Clear oscilloscope
+                canvasCtx.fillStyle = 'rgb(240, 240, 240)';
+                canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                mainOsc = null;
+                lfoOsc = null;
+                gainNode = null;
+                lfoGain = null;
+                isPlaying = false;
+                this.textContent = 'Start Sound';
+            }
+        });
+
+        // Main oscillator controls
+        document.getElementById('waveform').addEventListener('change', function() {
+            if (mainOsc) {
+                mainOsc.type = this.value;
+            }
+        });
+
+        document.getElementById('frequency').addEventListener('input', function() {
+            document.getElementById('freqDisplay').textContent = this.value + ' Hz';
+            if (mainOsc) {
+                mainOsc.frequency.setValueAtTime(this.value, audioContext.currentTime);
+            }
+        });
+
+        document.getElementById('volume').addEventListener('input', function() {
+            document.getElementById('volDisplay').textContent = this.value + '%';
+            if (gainNode) {
+                gainNode.gain.setValueAtTime(this.value / 100, audioContext.currentTime);
+            }
+        });
+
+        // LFO controls
+        document.getElementById('lfoWaveform').addEventListener('change', function() {
+            if (lfoOsc) {
+                lfoOsc.type = this.value;
+            }
+        });
+
+        document.getElementById('lfoFreq').addEventListener('input', function() {
+            document.getElementById('lfoFreqDisplay').textContent = this.value + ' Hz';
+            if (lfoOsc) {
+                lfoOsc.frequency.setValueAtTime(this.value, audioContext.currentTime);
+            }
+        });
+
+        document.getElementById('lfoDepth').addEventListener('input', function() {
+            document.getElementById('lfoDepthDisplay').textContent = this.value + '%';
+            if (lfoGain) {
+                const depth = this.value / 100;
+                if (document.getElementById('lfoTarget').value === 'frequency') {
+                    const freq = parseFloat(document.getElementById('frequency').value);
+                    lfoGain.gain.setValueAtTime(freq * depth, audioContext.currentTime);
+                } else {
+                    lfoGain.gain.setValueAtTime(depth, audioContext.currentTime);
+                }
+            }
+        });
+
+        document.getElementById('lfoTarget').addEventListener('change', function() {
+            // Need to restart the sound to change modulation routing
+            if (isPlaying) {
+                document.getElementById('toggleSound').click();
+                document.getElementById('toggleSound').click();
+            }
+        });
+    </script>
+</body>
+</html>
