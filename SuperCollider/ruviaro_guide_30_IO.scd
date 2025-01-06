@@ -56,3 +56,67 @@ c = {Out.ar(~myBus, SinOsc.ar([800, 880], mul: LFPulse.ar(2)))}.play;
 // Free both synths
 r.free; c.free;
 
+// 34 panning
+
+p = {Pan2.ar(in: PinkNoise.ar, pos: SinOsc.kr(11), level: 0.1)}.play;
+p.free;
+
+(
+x = {
+var lfn = LFNoise2.kr(15);
+	var saw = Saw.ar(
+		freq: 120,
+		mul: LFPulse.kr(freq: LFNoise1.kr(5).range(0.5, 5), width: 0.1));
+	var bpf = BPF.ar(
+		in: saw,
+		freq: lfn.range(500, 2500),
+		rq: 0.01,
+		mul:25);
+	Pan2.ar(in: bpf, pos: lfn);
+}.play;
+)
+x.free;
+
+// 35 splay and mix
+
+// 5 channels output (watch Meter window)
+a = { SinOsc.ar([100, 300, 500, 700, 900], mul: 0.1) }.play;
+a.free;
+// Mix it down to mono:
+b = { Mix(SinOsc.ar([100, 300, 500, 700, 900], mul: 0.1)) }.play;
+b.free;
+// Mix it down to stereo (spread evenly from left to right)
+c = { Splay.ar(SinOsc.ar([100, 300, 500, 700, 900], mul: 0.1)) }.play;
+c.free
+
+// Fun with Splay:
+(
+d = {arg fundamental = 110;
+var harmonics = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+var snd = BPF.ar(
+in: Saw.ar(32, LFPulse.ar(harmonics, width: 0.1)),
+freq: harmonics * fundamental,
+rq: 0.01,
+mul: 20);
+Splay.ar(snd); // mixes down nine channels to stereo
+}.play;
+)
+
+d.set(\fundamental, 50); // change fundamental just for fun
+d.free;
+
+// instant cluster generator
+// (16) different randomly initialised sins played simul
+c = { Mix.fill(16, {SinOsc.ar(rrand(100, 3000), mul: 0.01)}) }.play;
+c.free;
+
+// A note with 12 partials of decreasing amplitudes
+(
+n = { Mix.fill(12, {arg counter;
+var partial = counter + 1; // we want it to start from 1, not 0
+SinOsc.ar(partial * 440, mul: 1/partial.squared) * 0.1
+})
+}.play;
+FreqScope.new;
+)
+n.free;
